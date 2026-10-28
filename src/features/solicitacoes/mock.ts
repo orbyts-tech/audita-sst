@@ -1,0 +1,65 @@
+import type { Solicitacao } from "./types";
+
+export const SOLICITACOES_MOCK: Solicitacao[] = [
+  {
+    id: "sol-1",
+    empresaId: "1",
+    modo: "automatico",
+    status: "encerrado",
+    criadoEm: "2025-04-10T09:00:00-03:00",
+    atualizadoEm: "2025-04-14T10:24:00-03:00",
+    relatorioParcial: false,
+    relatorioDisponivel: true,
+    ultimaAtualizacaoDadosEm: "2025-04-14T10:24:00-03:00",
+    periodos: [
+      { id: "p1", competencia: "2024-01", status: "importado" },
+      { id: "p2", competencia: "2024-02", status: "importado" },
+      { id: "p3", competencia: "2025-03", status: "importado" },
+    ],
+  },
+  {
+    id: "sol-2",
+    empresaId: "2",
+    modo: "automatico",
+    status: "aguardando_liberacao",
+    criadoEm: "2025-04-10T12:00:00-03:00",
+    atualizadoEm: "2025-04-10T16:18:00-03:00",
+    relatorioParcial: true,
+    relatorioDisponivel: true,
+    aPartirDe: "2024-01",
+    periodos: [
+      { id: "p1", competencia: "2024-01", status: "importado" },
+      { id: "p2", competencia: "2024-02", status: "liberado" },
+      { id: "p3", competencia: "2024-03", status: "pendente" },
+    ],
+  },
+  {
+    id: "sol-4",
+    empresaId: "4",
+    modo: "automatico",
+    status: "baixando",
+    criadoEm: "2025-04-01T08:00:00-03:00",
+    atualizadoEm: "2025-04-02T14:37:00-03:00",
+    relatorioParcial: true,
+    relatorioDisponivel: true,
+    periodos: [
+      { id: "p1", competencia: "2023-06", status: "importado" },
+      { id: "p2", competencia: "2023-07", status: "importado" },
+      { id: "p3", competencia: "2024-01", status: "liberado" },
+    ],
+  },
+  {
+    id: "sol-5",
+    empresaId: "5",
+    modo: "automatico",
+    status: "encerrado",
+    criadoEm: "2025-03-20T10:00:00-03:00",
+    atualizadoEm: "2025-03-28T11:03:00-03:00",
+    relatorioParcial: false,
+    relatorioDisponivel: true,
+    periodos: [
+      { id: "p1", competencia: "2021-07", status: "importado" },
+      { id: "p2", competencia: "2024-12", status: "importado" },
+    ],
+  },
+];

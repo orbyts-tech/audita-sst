@@ -1,0 +1,99 @@
+/* Audita SST — Design System v2. Gerado de tokens.json. Não edite os valores à mão: mude no design system. */
+
+:root {
+  /* Cores */
+  --navy-900: #05235a;
+  --blue-700: #003b87;
+  --blue-600: #055ace;
+  --sky-400: #1b9bee;
+  --blue-100: #e8f1fd;
+  --surface-50: #f7faff;
+  --surface-0: #ffffff;
+  --ink-muted: #55657a;
+  --border: #d6e2f3;
+  --border-strong: #7d92b0;
+  --success-100: #e8f6ee;
+  --danger-100: #fbe7e7;
+  --logo-indigo: #0130a2;
+  --logo-royal: #0338cc;
+  --logo-azure: #0393fe;
+  --logo-sst: #017efc;
+  --logo-orange: #fa8200;
+  --logo-esocial: #ff6c00;
+  --orange-700: #b44d00;
+  --orange-100: #fff1e5;
+  --blue-200: #c4d8f6;
+  --success-200: #bfe3cf;
+  --warning-100: #fff8db;
+  --warning-200: #efdc8a;
+  --warning-600: #7a5c00;
+  --danger-200: #f1c2c2;
+  --danger-700: #a82424;
+  --success-600: #0a7d4f;
+  --danger-600: #c62f2f;
+  --violet-100: #efe7ff; /* Avatar de iniciais (tela Empresas). */
+  --violet-600: #6d3fd1; /* Texto do avatar violeta. 6.2:1 sobre violet-100. */
+  /* Espaçamento, raios, sombra */
+  --space-2: 8px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-12: 48px;
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --shadow-card: 0 8px 24px rgba(5, 35, 90, 0.08);
+  --shadow-topbar: 0 1px 0 rgba(5, 35, 90, 0.04), 0 6px 18px rgba(5, 35, 90, 0.04);
+  /* Tipografia */
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Tailwind v4: expõe os tokens como utilitários (bg-navy-900, text-ink-muted, rounded-md, shadow-card…) */
+/* Valores repetidos de propósito em raio, sombra e fonte: os nomes são os mesmos do :root e var() aqui criaria um ciclo. */
+@theme inline {
+  --color-navy-900: var(--navy-900);
+  --color-blue-700: var(--blue-700);
+  --color-blue-600: var(--blue-600);
+  --color-sky-400: var(--sky-400);
+  --color-blue-100: var(--blue-100);
+  --color-surface-50: var(--surface-50);
+  --color-surface-0: var(--surface-0);
+  --color-ink-muted: var(--ink-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-success-100: var(--success-100);
+  --color-danger-100: var(--danger-100);
+  --color-logo-indigo: var(--logo-indigo);
+  --color-logo-royal: var(--logo-royal);
+  --color-logo-azure: var(--logo-azure);
+  --color-logo-sst: var(--logo-sst);
+  --color-logo-orange: var(--logo-orange);
+  --color-logo-esocial: var(--logo-esocial);
+  --color-orange-700: var(--orange-700);
+  --color-orange-100: var(--orange-100);
+  --color-blue-200: var(--blue-200);
+  --color-success-200: var(--success-200);
+  --color-warning-100: var(--warning-100);
+  --color-warning-200: var(--warning-200);
+  --color-warning-600: var(--warning-600);
+  --color-danger-200: var(--danger-200);
+  --color-danger-700: var(--danger-700);
+  --color-success-600: var(--success-600);
+  --color-danger-600: var(--danger-600);
+  --color-violet-100: var(--violet-100);
+  --color-violet-600: var(--violet-600);
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --shadow-card: 0 8px 24px rgba(5, 35, 90, 0.08);
+  --shadow-topbar: 0 1px 0 rgba(5, 35, 90, 0.04), 0 6px 18px rgba(5, 35, 90, 0.04);
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Estilos de texto do design system */
+.text-style-display { font-size: 48px; line-height: 56px; font-weight: 800; }
+.text-style-h1 { font-size: 36px; line-height: 44px; font-weight: 700; }
+.text-style-h2 { font-size: 24px; line-height: 32px; font-weight: 700; }
+.text-style-eyebrow { font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; }
+.text-style-body-lg { font-size: 18px; line-height: 28px; font-weight: 400; }
+.text-style-body { font-size: 15px; line-height: 24px; font-weight: 400; }
+.text-style-label { font-size: 14px; line-height: 20px; font-weight: 600; }
