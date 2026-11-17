@@ -1,6 +1,6 @@
-# Módulo eSocial — fluxo preparado (sem API)
+# Módulo eSocial
 
-Plano v1.0 (24/10/2026). Código e jornada prontos; ingestão real, SOAP e parsers ficam para etapas seguintes.
+Plano v1.0 (24/10/2026). Jornada de importação manual permanece; a **Etapa 01** adiciona consulta real S-1000 via backend (`docs/ESOCIAL-ETAPA01.md`).
 
 ## Jornada
 
@@ -27,6 +27,12 @@ Empresa demonstração com dataset: **Indústria Alpha** (`id=1`).
 
 Origens: `manual_xml` · `manual_zip` (MVP) · `soap` (stub que falha com mensagem clara).
 
-## Fora deste MVP
+## Etapa 01 (leitura S-1000)
 
-Transmitir eventos, SOAP real, parsers XSD, bucket, worker, Excel paritário 14 abas, cálculo SAT/RAT com bases reais.
+Backend `/server` + aba **Consultar eSocial**. Dados oficiais nunca vêm de `seedSummary()` / `seedEvents()`.
+
+Ver `docs/ESOCIAL-ETAPA01.md`.
+
+## Fora desta etapa
+
+Transmitir eventos, parsers completos dos demais leiautes SST, bucket gerenciado, worker de paginação histórica, Excel paritário 14 abas, cálculo SAT/RAT com bases reais.

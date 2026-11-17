@@ -19,6 +19,7 @@ import { EsocialEventsPage } from "@/features/esocial/pages/EsocialEventsPage";
 import { EsocialExtractionsPage } from "@/features/esocial/pages/EsocialExtractionsPage";
 import { EsocialFindingDetailPage } from "@/features/esocial/pages/EsocialFindingDetailPage";
 import { EsocialImportPage } from "@/features/esocial/pages/EsocialImportPage";
+import { EsocialConsultaPage } from "@/features/esocial/pages/EsocialConsultaPage";
 import { EsocialOverviewPage } from "@/features/esocial/pages/EsocialOverviewPage";
 import { EsocialReportsPage } from "@/features/esocial/pages/EsocialReportsPage";
 import { EsocialWorkersPage } from "@/features/esocial/pages/EsocialWorkersPage";
@@ -113,6 +114,7 @@ export default function App() {
           <Route path="/empresas/:id/esocial" element={<EsocialHubLayout />}>
             <Route index element={<Navigate to="visao-geral" replace />} />
             <Route path="visao-geral" element={<EsocialOverviewPage />} />
+            <Route path="consultar" element={<EsocialConsultaPage />} />
             <Route path="importar" element={<EsocialImportPage />} />
             <Route path="trabalhadores" element={<EsocialWorkersPage />} />
             <Route path="eventos" element={<EsocialEventsPage />} />

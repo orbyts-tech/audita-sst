@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Link, Navigate, NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Upload } from "lucide-react";
+import { ArrowLeft, CloudDownload, Upload } from "lucide-react";
 import { useApp } from "@/app/AppProvider";
 import { Button } from "@/components/ui/Button";
 import { InitialsAvatar } from "@/components/ui/InitialsAvatar";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 
 const TABS = [
   { to: "visao-geral", label: "Visão geral" },
+  { to: "consultar", label: "Consultar eSocial" },
   { to: "trabalhadores", label: "Trabalhadores" },
   { to: "eventos", label: "Eventos SST" },
   { to: "auditoria", label: "Auditoria" },
@@ -73,10 +74,10 @@ export function EsocialHubLayout() {
           </Button>
           <Button
             variant="secondary"
-            disabled
-            title="Webservices SOAP em fase posterior"
+            iconLeft={<CloudDownload aria-hidden className="size-5" />}
+            onClick={() => navigate(`/empresas/${id}/esocial/consultar`)}
           >
-            Consultar atualizações
+            Consultar eSocial
           </Button>
         </div>
       </div>
@@ -115,7 +116,8 @@ export function EsocialHubLayout() {
       <Outlet />
 
       <p className="text-center text-xs text-ink-muted">
-        Fluxo preparado sem conexão a API.{" "}
+        Extrações manuais usam dados locais; a aba Consultar eSocial fala com a API oficial via
+        backend.{" "}
         <Link to={`/empresas/${id}`} className="font-semibold text-blue-600">
           Voltar ao resumo da empresa
         </Link>

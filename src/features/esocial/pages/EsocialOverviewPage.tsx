@@ -86,6 +86,7 @@ export function EsocialOverviewPage() {
       <section className="rounded-2xl bg-surface-0 p-5 shadow-card">
         <h2 className="text-lg font-bold text-navy-900">Eventos e dados disponíveis</h2>
         <div className="mt-4 flex flex-wrap gap-3">
+          <QuickLink to={`/empresas/${id}/esocial/consultar`} label="Consultar eSocial" />
           <QuickLink to={`/empresas/${id}/esocial/trabalhadores`} label="Trabalhadores" />
           <QuickLink to={`/empresas/${id}/esocial/eventos`} label="Eventos SST" />
           <QuickLink to={`/empresas/${id}/esocial/auditoria`} label="Auditoria" />

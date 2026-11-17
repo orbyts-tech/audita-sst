@@ -1,5 +1,5 @@
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ClipboardList, Calculator } from "lucide-react";
+import { ArrowLeft, ClipboardList, Calculator, CloudDownload } from "lucide-react";
 import { useApp } from "@/app/AppProvider";
 import { Button } from "@/components/ui/Button";
 import { InitialsAvatar } from "@/components/ui/InitialsAvatar";
@@ -62,6 +62,13 @@ export function EmpresaDetalhePage() {
             onClick={abrirOuCriarSolicitacao}
           >
             {sol ? "Abrir solicitação" : "Criar solicitação"}
+          </Button>
+          <Button
+            variant="secondary"
+            iconLeft={<CloudDownload aria-hidden className="size-5" />}
+            onClick={() => navigate(`/empresas/${empresa.id}/esocial/consultar`)}
+          >
+            Consultar eSocial
           </Button>
           <Button
             variant="secondary"

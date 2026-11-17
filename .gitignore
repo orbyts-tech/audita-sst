@@ -11,6 +11,25 @@ node_modules
 dist
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+server/data/
+server/data/**
+certs/
+secrets/
+*.pfx
+*.p12
+*.pem
+*.key
+*.cer
+*.crt
+# XMLs oficiais baixados (não versionar)
+server/data/**/*.xml
+**/esocial-xmls/**
 
 # Editor directories and files
 .vscode/*
