@@ -5,7 +5,7 @@ import type { NovaEmpresaInput } from "@/lib/validation/schemas";
 export function criarEmpresaFromInput(
   dados: NovaEmpresaInput,
   agoraIso: string,
-  id = String(Date.now()),
+  id = crypto.randomUUID(),
 ): Empresa {
   return {
     id,

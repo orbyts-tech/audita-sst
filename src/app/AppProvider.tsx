@@ -31,6 +31,18 @@ import {
 import { toSafeInternalHref } from "@/lib/security/safeHref";
 import { isValidEntityId } from "@/lib/security/entityId";
 import { sanitizeFileName } from "@/lib/security/sanitizeFileName";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
+import {
+  insertAnalise,
+  insertEmpresa,
+  insertNotification,
+  loadBootstrap,
+  markAllNotificationsRead,
+  markNotificationRead,
+  updateEmpresa,
+  updateEscritorio,
+  upsertSolicitacao,
+} from "@/lib/supabase/repository";
 import {
   loginSchema,
   novaEmpresaSchema,
@@ -89,17 +101,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [autenticado, setAutenticado] = useState(lerSessaoAtiva);
   const [usuario, setUsuario] = useState<Usuario>(USUARIO_PADRAO);
   const [escritorio, setEscritorio] = useState<Escritorio>(ESCRITORIO_PADRAO);
-  const [empresas, setEmpresas] = useState<Empresa[]>(EMPRESAS_MOCK);
-  const [solicitacoes, setSolicitacoes] = useState<Solicitacao[]>(SOLICITACOES_MOCK);
-  const [analises, setAnalises] = useState<Analise[]>(ANALISES_MOCK);
-  const [notificacoes, setNotificacoes] = useState<Notificacao[]>(NOTIFICACOES_MOCK);
+  const [empresas, setEmpresas] = useState<Empresa[]>(
+    isSupabaseConfigured ? [] : EMPRESAS_MOCK,
+  );
+  const [solicitacoes, setSolicitacoes] = useState<Solicitacao[]>(
+    isSupabaseConfigured ? [] : SOLICITACOES_MOCK,
+  );
+  const [analises, setAnalises] = useState<Analise[]>(
+    isSupabaseConfigured ? [] : ANALISES_MOCK,
+  );
+  const [notificacoes, setNotificacoes] = useState<Notificacao[]>(
+    isSupabaseConfigured ? [] : NOTIFICACOES_MOCK,
+  );
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const timers = useRef<Record<string, number>>({});
+  const persistEnabled = isSupabaseConfigured && Boolean(organizationId);
+
+  const persistSolicitacao = useCallback(
+    (sol: Solicitacao) => {
+      if (!persistEnabled) return;
+      void upsertSolicitacao(sol).catch((err) => {
+        console.error("Falha ao persistir solicitação", err);
+      });
+    },
+    [persistEnabled],
+  );
 
   const patchSolicitacao = useCallback(
     (id: string, updater: (s: Solicitacao) => Solicitacao) => {
-      setSolicitacoes((lista) => lista.map((s) => (s.id === id ? updater(s) : s)));
+      setSolicitacoes((lista) => {
+        const next = lista.map((s) => {
+          if (s.id !== id) return s;
+          const updated = updater(s);
+          persistSolicitacao(updated);
+          return updated;
+        });
+        return next;
+      });
     },
-    [],
+    [persistSolicitacao],
   );
 
   const avancarPipeline = useCallback(
@@ -114,6 +154,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const atualizada = aplicarTickPipeline(atual, agoraIso());
           if (!atualizada) return lista;
 
+          persistSolicitacao(atualizada);
+
           if (!isStatusTerminal(atualizada.status)) {
             timers.current[id] = window.setTimeout(tick, 2200);
           }
@@ -123,12 +165,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       timers.current[id] = window.setTimeout(tick, 1800);
     },
-    [],
+    [persistSolicitacao],
   );
 
   useEffect(() => {
     return () => {
       Object.values(timers.current).forEach((t) => window.clearTimeout(t));
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const data = await loadBootstrap();
+        if (cancelled || !data) return;
+        setOrganizationId(data.organizationId);
+        setEscritorio(data.escritorio);
+        setEmpresas(data.empresas);
+        setSolicitacoes(data.solicitacoes);
+        setAnalises(data.analises);
+        setNotificacoes(data.notificacoes);
+      } catch (err) {
+        console.error("Falha ao carregar Supabase — usando mocks locais", err);
+        if (!cancelled) {
+          setEmpresas(EMPRESAS_MOCK);
+          setSolicitacoes(SOLICITACOES_MOCK);
+          setAnalises(ANALISES_MOCK);
+          setNotificacoes(NOTIFICACOES_MOCK);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -172,52 +244,86 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUsuario((u) => ({ ...u, ...dados }));
   }, []);
 
-  const atualizarEscritorio = useCallback((dados: Partial<Escritorio>) => {
-    setEscritorio((e) => ({ ...e, ...dados }));
-  }, []);
+  const atualizarEscritorio = useCallback(
+    (dados: Partial<Escritorio>) => {
+      setEscritorio((e) => {
+        const next = { ...e, ...dados };
+        if (organizationId) {
+          void updateEscritorio(organizationId, next).catch((err) => {
+            console.error("Falha ao persistir escritório", err);
+          });
+        }
+        return next;
+      });
+    },
+    [organizationId],
+  );
 
-  const enviarCertificadoA1 = useCallback((nomeArquivo: string) => {
-    const nomeSeguro = sanitizeFileName(nomeArquivo);
-    setEscritorio((e) => ({
-      ...e,
-      certificadoA1: {
-        nomeArquivo: nomeSeguro,
-        validadeAte: "2027-12-31",
-        enviadoEm: agoraIso(),
-      },
-    }));
-  }, []);
+  const enviarCertificadoA1 = useCallback(
+    (nomeArquivo: string) => {
+      const nomeSeguro = sanitizeFileName(nomeArquivo);
+      setEscritorio((e) => {
+        const next: Escritorio = {
+          ...e,
+          certificadoA1: {
+            nomeArquivo: nomeSeguro,
+            validadeAte: "2027-12-31",
+            enviadoEm: agoraIso(),
+          },
+        };
+        if (organizationId) {
+          void updateEscritorio(organizationId, next).catch((err) => {
+            console.error("Falha ao persistir certificado", err);
+          });
+        }
+        return next;
+      });
+    },
+    [organizationId],
+  );
 
-  const adicionarEmpresa = useCallback((dados: NovaEmpresaInput) => {
-    const parsed = novaEmpresaSchema.parse(dados);
-    const agora = agoraIso();
-    const empresa = criarEmpresaFromInput(parsed, agora);
-    const analise: Analise = {
-      id: `a-${empresa.id}`,
-      empresaId: empresa.id,
-      titulo: `Auditoria SST — ${empresa.razaoSocial}`,
-      status: "pendente",
-      passivoEstimado: 0,
-      progresso: 0,
-      atualizadoEm: agora,
-      resumo: "Empresa cadastrada. Crie uma solicitação para extrair o eSocial.",
-    };
-    const href = toSafeInternalHref(`/empresas/${empresa.id}`);
-    setEmpresas((lista) => [empresa, ...lista]);
-    setAnalises((lista) => [analise, ...lista]);
-    setNotificacoes((lista) => [
-      {
-        id: `n-${empresa.id}`,
+  const adicionarEmpresa = useCallback(
+    (dados: NovaEmpresaInput) => {
+      const parsed = novaEmpresaSchema.parse(dados);
+      const agora = agoraIso();
+      const empresa = criarEmpresaFromInput(parsed, agora, crypto.randomUUID());
+      const analise: Analise = {
+        id: crypto.randomUUID(),
+        empresaId: empresa.id,
+        titulo: `Auditoria SST — ${empresa.razaoSocial}`,
+        status: "pendente",
+        passivoEstimado: 0,
+        progresso: 0,
+        atualizadoEm: agora,
+        resumo: "Empresa cadastrada. Crie uma solicitação para extrair o eSocial.",
+      };
+      const notificacao: Notificacao = {
+        id: crypto.randomUUID(),
         titulo: "Nova empresa cadastrada",
         mensagem: `${empresa.razaoSocial} pronta para solicitação automática.`,
         criadaEm: agora,
         lida: false,
-        href: href ?? undefined,
-      },
-      ...lista,
-    ]);
-    return empresa;
-  }, []);
+        href: toSafeInternalHref(`/empresas/${empresa.id}`) ?? undefined,
+      };
+      setEmpresas((lista) => [empresa, ...lista]);
+      setAnalises((lista) => [analise, ...lista]);
+      setNotificacoes((lista) => [notificacao, ...lista]);
+
+      if (organizationId) {
+        void (async () => {
+          try {
+            await insertEmpresa(organizationId, empresa);
+            await insertAnalise(analise);
+            await insertNotification(organizationId, notificacao);
+          } catch (err) {
+            console.error("Falha ao persistir empresa", err);
+          }
+        })();
+      }
+      return empresa;
+    },
+    [organizationId],
+  );
 
   const obterEmpresa = useCallback(
     (id: string) => (isValidEntityId(id) ? empresas.find((e) => e.id === id) : undefined),
@@ -253,7 +359,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         aPartirDe && /^\d{4}-(0[1-9]|1[0-2])$/.test(aPartirDe) ? aPartirDe : undefined;
       const agora = agoraIso();
       const sol: Solicitacao = {
-        id: `sol-${Date.now()}`,
+        id: crypto.randomUUID(),
         empresaId,
         modo: "automatico",
         status: "criado",
@@ -263,22 +369,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
         relatorioParcial: false,
         relatorioDisponivel: false,
         periodos: [
-          { id: "p-new-1", competencia: competencia || "2024-01", status: "pendente" },
-          { id: "p-new-2", competencia: "2024-02", status: "pendente" },
+          {
+            id: crypto.randomUUID(),
+            competencia: competencia || "2024-01",
+            status: "pendente",
+          },
+          { id: crypto.randomUUID(), competencia: "2024-02", status: "pendente" },
         ],
       };
       setSolicitacoes((lista) => [sol, ...lista]);
       setEmpresas((lista) =>
-        lista.map((e) =>
-          e.id === empresaId
-            ? { ...e, situacaoExtracao: "processando", atualizadoEm: agora }
-            : e,
-        ),
+        lista.map((e) => {
+          if (e.id !== empresaId) return e;
+          const updated: Empresa = {
+            ...e,
+            situacaoExtracao: "processando",
+            atualizadoEm: agora,
+          };
+          if (organizationId) {
+            void updateEmpresa(updated).catch((err) => {
+              console.error("Falha ao atualizar empresa", err);
+            });
+          }
+          return updated;
+        }),
       );
+      persistSolicitacao(sol);
       avancarPipeline(sol.id);
       return sol;
     },
-    [solicitacoes, avancarPipeline],
+    [solicitacoes, avancarPipeline, organizationId, persistSolicitacao],
   );
 
   const atualizarDados = useCallback(
@@ -293,7 +413,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         periodos: [
           ...s.periodos,
           {
-            id: `p-${Date.now()}`,
+            id: crypto.randomUUID(),
             competencia: new Date().toISOString().slice(0, 7),
             status: "pendente",
           },
@@ -359,15 +479,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [analises],
   );
 
-  const marcarNotificacaoLida = useCallback((id: string) => {
-    setNotificacoes((lista) =>
-      lista.map((n) => (n.id === id ? { ...n, lida: true } : n)),
-    );
-  }, []);
+  const marcarNotificacaoLida = useCallback(
+    (id: string) => {
+      setNotificacoes((lista) =>
+        lista.map((n) => (n.id === id ? { ...n, lida: true } : n)),
+      );
+      if (organizationId) {
+        void markNotificationRead(id).catch((err) => {
+          console.error("Falha ao marcar notificação", err);
+        });
+      }
+    },
+    [organizationId],
+  );
 
   const marcarTodasLidas = useCallback(() => {
     setNotificacoes((lista) => lista.map((n) => ({ ...n, lida: true })));
-  }, []);
+    if (organizationId) {
+      void markAllNotificationsRead(organizationId).catch((err) => {
+        console.error("Falha ao marcar notificações", err);
+      });
+    }
+  }, [organizationId]);
 
   const naoLidas = useMemo(
     () => notificacoes.filter((n) => !n.lida).length,

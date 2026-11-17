@@ -185,19 +185,37 @@ class MemoryStore implements DataStore {
 }
 
 let store: DataStore | null = null;
+let storeReady: Promise<DataStore> | null = null;
 
 export function getStore(): DataStore {
-  if (store) return store;
-  const env = getEnv();
-  if (env.DATABASE_URL) {
-    logger.warn(
-      "DATABASE_URL definida; nesta etapa a implementação ativa ainda usa store em memória. Aplique server/src/db/migrations/001_init.sql no Postgres/Supabase e conecte o client pg na próxima iteração.",
-    );
+  if (!store) {
+    store = new MemoryStore();
   }
-  store = new MemoryStore();
   return store;
+}
+
+/** Inicializa Postgres quando DATABASE_URL existir; senão mantém memória. */
+export async function getStoreAsync(): Promise<DataStore> {
+  if (storeReady) return storeReady;
+
+  storeReady = (async () => {
+    if (getEnv().DATABASE_URL) {
+      const { createPostgresStore } = await import("./postgresStore.js");
+      const pgStore = await createPostgresStore();
+      if (pgStore) {
+        store = pgStore;
+        return store;
+      }
+      logger.warn("DATABASE_URL definida, mas conexão falhou — store em memória ativo.");
+    }
+    store = new MemoryStore();
+    return store;
+  })();
+
+  return storeReady;
 }
 
 export function resetStoreForTests() {
   store = new MemoryStore();
+  storeReady = null;
 }
