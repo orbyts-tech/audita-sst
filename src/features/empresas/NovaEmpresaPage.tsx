@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { useApp } from "@/app/AppProvider";
 import { Button } from "@/components/ui/Button";
@@ -11,8 +11,9 @@ import { GRUPO_ESOCIAL, TIPO_ACESSO_LABEL, type GrupoEsocial, type TipoAcessoEso
 import { SEGMENTOS_OPCOES } from "./filtros";
 
 export function NovaEmpresaPage() {
-  const { adicionarEmpresa } = useApp();
+  const { adicionarEmpresa, can } = useApp();
   const navigate = useNavigate();
+  if (!can("company.create")) return <Navigate to="/empresas" replace />;
   const [razaoSocial, setRazaoSocial] = useState("");
   const [segmento, setSegmento] = useState<string>(SEGMENTOS_OPCOES[0]);
   const [cnpj, setCnpj] = useState("");

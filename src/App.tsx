@@ -11,6 +11,7 @@ import {
 import { useApp } from "@/app/AppProvider";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { LoginPage } from "@/features/auth/LoginPage";
+import { SemOrganizacaoPage } from "@/features/auth/SemOrganizacaoPage";
 import { ConfiguracoesPage } from "@/features/configuracoes/ConfiguracoesPage";
 import { EsocialHubLayout } from "@/features/esocial/components/EsocialHubLayout";
 import { EsocialAuditPage } from "@/features/esocial/pages/EsocialAuditPage";
@@ -41,11 +42,29 @@ import { SolicitacaoDetalhePage } from "@/features/solicitacoes/SolicitacaoDetal
 import { SolicitacoesPage } from "@/features/solicitacoes/SolicitacoesPage";
 
 function RequireAuth() {
-  const { autenticado } = useApp();
+  const { autenticado, sessionLoading, bootstrapLoading, semOrganizacao } = useApp();
   const location = useLocation();
+
+  if (sessionLoading || (autenticado && bootstrapLoading)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface-50">
+        <p className="text-sm text-ink-muted">Carregando sessão…</p>
+      </div>
+    );
+  }
+
   if (!autenticado) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
+
+  if (semOrganizacao && !location.pathname.startsWith("/onboarding")) {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  if (!semOrganizacao && location.pathname.startsWith("/onboarding")) {
+    return <Navigate to="/solicitacoes" replace />;
+  }
+
   return <Outlet />;
 }
 
@@ -64,7 +83,7 @@ function RedirectSatRat() {
 }
 
 function EmpresasRoute() {
-  const { empresas } = useApp();
+  const { empresas, can } = useApp();
   const navigate = useNavigate();
   const [filtrosOpen, setFiltrosOpen] = useState(false);
   const [filtrosDraft, setFiltrosDraft] = useState<FiltrosEmpresas>(FILTROS_VAZIOS);
@@ -78,7 +97,9 @@ function EmpresasRoute() {
       <EmpresasPage
         empresas={filtradas}
         filtrosAtivos={ativos}
-        onNovaEmpresa={() => navigate("/empresas/nova")}
+        onNovaEmpresa={
+          can("company.create") ? () => navigate("/empresas/nova") : undefined
+        }
         onAbrirFiltros={() => {
           setFiltrosDraft(filtros);
           setFiltrosOpen(true);
@@ -103,6 +124,7 @@ export default function App() {
       <Route element={<RequireAuth />}>
         <Route element={<AuthenticatedShell />}>
           <Route path="/" element={<Navigate to="/solicitacoes" replace />} />
+          <Route path="/onboarding" element={<SemOrganizacaoPage />} />
           <Route path="/solicitacoes" element={<SolicitacoesPage />} />
           <Route path="/solicitacoes/nova" element={<NovaSolicitacaoPage />} />
           <Route path="/solicitacoes/:id" element={<SolicitacaoDetalhePage />} />

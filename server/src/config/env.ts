@@ -6,21 +6,24 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadDotenv({ path: path.resolve(__dirname, "../../.env") });
 
+const boolish = (v: string | undefined) => v === "true" || v === "1" || v === "yes";
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8787),
   HOST: z.string().default("127.0.0.1"),
   CORS_ORIGINS: z.string().default("http://localhost:5173"),
-  AUDITA_API_USER: z.string().min(3),
-  AUDITA_API_PASSWORD: z.string().min(8),
-  AUDITA_JWT_SECRET: z.string().min(32),
+  /** @deprecated login legado da API — não usar como auth normal */
+  AUDITA_API_USER: z.string().min(3).optional().default("legacy-disabled"),
+  AUDITA_API_PASSWORD: z.string().min(8).optional().default("legacy-disabled"),
+  AUDITA_JWT_SECRET: z.string().min(32).optional().default("legacy-disabled-secret-min-32-chars!!"),
   AUDITA_JWT_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+  SUPABASE_URL: z.string().url().optional().or(z.literal("")).default(""),
   ESOCIAL_AMBIENTE: z.enum(["producao_restrita", "producao"]).default("producao_restrita"),
   ESOCIAL_TRANSPORT_MOCK: z
     .string()
     .optional()
     .transform((v) => v !== "false" && v !== "0"),
-  /** Gate explícito para HTTPS oficial. Sem efeito quando transportMock=true. */
   ESOCIAL_ALLOW_REAL_CALLS: z
     .string()
     .optional()
@@ -32,8 +35,23 @@ const envSchema = z.object({
     .optional()
     .default("")
     .transform((v) => v.replace(/\D/g, "")),
-  ESOCIAL_ALLOWED_COMPANY_IDS: z.string().default("1"),
+  /** Fallback legado somente em development/test — nunca autoridade em produção */
+  ESOCIAL_ALLOWED_COMPANY_IDS: z.string().default(""),
+  /**
+   * Preferir role `audita_app` (migração 006) via pooler.
+   * Ex.: postgresql://audita_app:...@aws-0-sa-east-1.pooler.supabase.com:6543/postgres
+   */
   DATABASE_URL: z.string().optional().default(""),
+  /** Caminho para PEM da cadeia TLS (opcional). */
+  DATABASE_SSL_CA: z.string().optional().default(""),
+  /**
+   * Escape hatch SOMENTE em development/test.
+   * Em produção o boot falha se true.
+   */
+  DATABASE_SSL_INSECURE: z
+    .string()
+    .optional()
+    .transform((v) => boolish(v)),
   STORAGE_DIR: z.string().default("./data/xmls"),
   BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(1_048_576),
   LOG_LEVEL: z.string().default("info"),
@@ -56,6 +74,12 @@ export function getEnv(): AppEnv {
     throw new Error(`Configuração inválida: ${msg}`);
   }
   const data = parsed.data;
+  if (data.NODE_ENV === "production" && !data.DATABASE_URL) {
+    throw new Error("DATABASE_URL é obrigatória em produção.");
+  }
+  if (data.NODE_ENV === "production" && !data.SUPABASE_URL) {
+    throw new Error("SUPABASE_URL é obrigatória em produção.");
+  }
   cached = {
     ...data,
     corsOrigins: data.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean),

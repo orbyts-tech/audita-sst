@@ -1,4 +1,4 @@
-const TOKEN_KEY = "audita_api_token";
+import { getAccessToken } from "@/lib/auth/supabaseAuth";
 
 export type ApiErrorBody = {
   error?: { code?: string; message?: string };
@@ -8,40 +8,11 @@ export function getApiBaseUrl(): string {
   return import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "";
 }
 
-export function getApiToken(): string | null {
-  try {
-    return sessionStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setApiToken(token: string | null) {
-  try {
-    if (!token) sessionStorage.removeItem(TOKEN_KEY);
-    else sessionStorage.setItem(TOKEN_KEY, token);
-  } catch {
-    /* ignore */
-  }
-}
-
-export async function requestApiToken(username: string, password: string): Promise<string> {
-  const res = await fetch(`${getApiBaseUrl()}/api/auth/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  const data = (await res.json()) as { token?: string } & ApiErrorBody;
-  if (!res.ok || !data.token) {
-    throw new Error(data.error?.message || "Falha na autenticação da API.");
-  }
-  setApiToken(data.token);
-  return data.token;
-}
-
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getApiToken();
-  if (!token) throw new Error("Autentique-se na API eSocial antes de consultar.");
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error("Sessão expirada. Faça login novamente.");
+  }
   const res = await fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
     headers: {
@@ -50,6 +21,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
+  if (res.status === 401) {
+    throw new Error("Sessão inválida ou expirada.");
+  }
   const data = (await res.json()) as T & ApiErrorBody;
   if (!res.ok) {
     throw new Error(data.error?.message || `Erro HTTP ${res.status}`);

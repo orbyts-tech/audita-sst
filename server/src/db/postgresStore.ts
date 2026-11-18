@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { getEnv } from "../config/env.js";
 import { logger } from "../lib/logger.js";
+import { buildPgSsl, databaseUserLooksPrivileged } from "./pgSsl.js";
 import type {
   ConsultaRecord,
   DataStore,
@@ -68,9 +69,14 @@ export class PostgresStore implements DataStore {
   private locks = new Set<string>();
 
   constructor(databaseUrl: string) {
+    if (databaseUserLooksPrivileged(databaseUrl)) {
+      logger.warn(
+        "PostgresStore usando papel privilegiado — migre para audita_app (006_app_role.sql).",
+      );
+    }
     this.pool = new Pool({
       connectionString: databaseUrl,
-      ssl: databaseUrl.includes("localhost") ? undefined : { rejectUnauthorized: false },
+      ssl: buildPgSsl(databaseUrl),
       max: 5,
     });
   }

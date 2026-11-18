@@ -14,7 +14,7 @@ export interface EmpresasPageProps {
   carregando?: boolean;
   erro?: string | null;
   onTentarNovamente?: () => void;
-  onNovaEmpresa: () => void;
+  onNovaEmpresa?: () => void;
   onAbrirFiltros: () => void;
   onAbrirEmpresa: (empresa: Empresa) => void;
   filtrosAtivos?: number;
@@ -85,14 +85,16 @@ export function EmpresasPage({
           >
             {filtrosAtivos > 0 ? `Filtros (${filtrosAtivos})` : "Filtros"}
           </Button>
-          <Button
-            size="lg"
-            onClick={onNovaEmpresa}
-            iconLeft={<Plus aria-hidden className="size-5" strokeWidth={2.4} />}
-            className="flex-1 sm:flex-none"
-          >
-            Nova empresa
-          </Button>
+          {onNovaEmpresa && (
+            <Button
+              size="lg"
+              onClick={onNovaEmpresa}
+              iconLeft={<Plus aria-hidden className="size-5" strokeWidth={2.4} />}
+              className="flex-1 sm:flex-none"
+            >
+              Nova empresa
+            </Button>
+          )}
         </div>
       </div>
 

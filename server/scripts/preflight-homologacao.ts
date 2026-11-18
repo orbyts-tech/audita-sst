@@ -47,21 +47,15 @@ async function main() {
 
   push(
     checks,
-    "auth.api_user",
-    env.AUDITA_API_USER.length >= 3,
-    "AUDITA_API_USER definido (não é o login demo do frontend)",
+    "auth.supabase_url",
+    Boolean(env.SUPABASE_URL),
+    "SUPABASE_URL configurada (JWT via JWKS; secret legado não é necessário)",
   );
   push(
     checks,
-    "auth.api_password",
-    env.AUDITA_API_PASSWORD.length >= 8,
-    "AUDITA_API_PASSWORD com comprimento mínimo",
-  );
-  push(
-    checks,
-    "auth.jwt_secret",
-    env.AUDITA_JWT_SECRET.length >= 32,
-    "AUDITA_JWT_SECRET >= 32 chars",
+    "auth.database_url",
+    Boolean(env.DATABASE_URL),
+    "DATABASE_URL para autorização por org/empresa",
   );
 
   push(

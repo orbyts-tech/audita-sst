@@ -9,12 +9,9 @@ import {
   type ReactNode,
 } from "react";
 import type { Usuario } from "@/components/layout/Topbar";
-import { ANALISES_MOCK } from "@/features/analises/mock";
 import type { Analise } from "@/features/analises/types";
-import { EMPRESAS_MOCK } from "@/features/empresas/mock";
 import type { Empresa } from "@/features/empresas/types";
 import type { Escritorio } from "@/features/meus-dados/types";
-import { NOTIFICACOES_MOCK } from "@/features/notificacoes/mock";
 import type { Notificacao } from "@/features/notificacoes/types";
 import { criarEmpresaFromInput } from "@/domain/empresas/createEmpresa";
 import {
@@ -22,23 +19,38 @@ import {
   isStatusTerminal,
 } from "@/domain/solicitacoes/transitions";
 import {
-  limparSessao,
-  lerSessaoAtiva,
+  type CompanyRole,
+  type OrgRole,
+  type Permission,
+  hasCompanyPermission,
+  hasOrgPermission,
+} from "@/lib/auth/permissions";
+import {
+  gravarOrganizacaoAtiva,
+  limparPreferenciasSessao,
   registrarFalhaLogin,
-  registrarSucessoLogin,
   statusBloqueioLogin,
+  limparBloqueioLogin,
 } from "@/lib/auth/session";
+import {
+  getCurrentSession,
+  onAuthStateChange,
+  signInWithPassword,
+  signOut,
+} from "@/lib/auth/supabaseAuth";
 import { toSafeInternalHref } from "@/lib/security/safeHref";
 import { isValidEntityId } from "@/lib/security/entityId";
 import { sanitizeFileName } from "@/lib/security/sanitizeFileName";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import {
+  createOrganizationOnboarding,
   insertAnalise,
   insertEmpresa,
   insertNotification,
   loadBootstrap,
   markAllNotificationsRead,
   markNotificationRead,
+  type MembershipOrg,
   updateEmpresa,
   updateEscritorio,
   upsertSolicitacao,
@@ -48,29 +60,46 @@ import {
   novaEmpresaSchema,
   type NovaEmpresaInput,
 } from "@/lib/validation/schemas";
-import { SOLICITACOES_MOCK } from "@/features/solicitacoes/mock";
 import type { Solicitacao } from "@/features/solicitacoes/types";
 
-const USUARIO_PADRAO: Usuario = {
-  nome: "Carlos Silva",
-  papel: "Administrador",
-};
-
-const ESCRITORIO_PADRAO: Escritorio = {
-  razaoSocial: "GSO Saúde Ocupacional Ltda.",
-  cnpj: "11222333000181",
-  email: "comercial@gso.example",
+const ESCRITORIO_VAZIO: Escritorio = {
+  razaoSocial: "",
+  cnpj: "",
+  email: "",
 };
 
 type AppContextValue = {
   autenticado: boolean;
+  sessionLoading: boolean;
+  bootstrapLoading: boolean;
+  bootstrapError: string | null;
+  semOrganizacao: boolean;
+  memberships: MembershipOrg[];
+  orgRole: OrgRole | null;
+  organizationId: string | null;
+  companyRoles: Record<string, CompanyRole>;
+  can: (permission: Permission, companyId?: string) => boolean;
   usuario: Usuario;
-  login: (email: string, senha: string) => { ok: true } | { ok: false; erro: string };
-  logout: () => void;
+  login: (
+    email: string,
+    senha: string,
+  ) => Promise<{ ok: true } | { ok: false; erro: string }>;
+  logout: () => Promise<void>;
+  selecionarOrganizacao: (organizationId: string) => Promise<void>;
+  criarOrganizacao: (dados: {
+    razaoSocial: string;
+    cnpj?: string;
+    email?: string;
+  }) => Promise<{ ok: true } | { ok: false; erro: string }>;
   atualizarPerfil: (dados: Partial<Usuario>) => void;
   escritorio: Escritorio;
   atualizarEscritorio: (dados: Partial<Escritorio>) => void;
-  enviarCertificadoA1: (nomeArquivo: string) => void;
+  enviarCertificadoA1: (dados: {
+    nomeArquivo: string;
+    validadeAte?: string;
+    subjectCN?: string;
+    cnpjBase?: string;
+  }) => void;
   empresas: Empresa[];
   adicionarEmpresa: (dados: NovaEmpresaInput) => Empresa;
   obterEmpresa: (id: string) => Empresa | undefined;
@@ -97,25 +126,156 @@ function agoraIso() {
   return new Date().toISOString();
 }
 
+function clearDomainState(setters: {
+  setOrganizationId: (v: string | null) => void;
+  setOrgRole: (v: OrgRole | null) => void;
+  setMemberships: (v: MembershipOrg[]) => void;
+  setCompanyRoles: (v: Record<string, CompanyRole>) => void;
+  setUsuario: (v: Usuario) => void;
+  setEscritorio: (v: Escritorio) => void;
+  setEmpresas: (v: Empresa[]) => void;
+  setSolicitacoes: (v: Solicitacao[]) => void;
+  setAnalises: (v: Analise[]) => void;
+  setNotificacoes: (v: Notificacao[]) => void;
+  setBootstrapError: (v: string | null) => void;
+}) {
+  setters.setOrganizationId(null);
+  setters.setOrgRole(null);
+  setters.setMemberships([]);
+  setters.setCompanyRoles({});
+  setters.setUsuario({ nome: "", papel: "" });
+  setters.setEscritorio(ESCRITORIO_VAZIO);
+  setters.setEmpresas([]);
+  setters.setSolicitacoes([]);
+  setters.setAnalises([]);
+  setters.setNotificacoes([]);
+  setters.setBootstrapError(null);
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [autenticado, setAutenticado] = useState(lerSessaoAtiva);
-  const [usuario, setUsuario] = useState<Usuario>(USUARIO_PADRAO);
-  const [escritorio, setEscritorio] = useState<Escritorio>(ESCRITORIO_PADRAO);
-  const [empresas, setEmpresas] = useState<Empresa[]>(
-    isSupabaseConfigured ? [] : EMPRESAS_MOCK,
-  );
-  const [solicitacoes, setSolicitacoes] = useState<Solicitacao[]>(
-    isSupabaseConfigured ? [] : SOLICITACOES_MOCK,
-  );
-  const [analises, setAnalises] = useState<Analise[]>(
-    isSupabaseConfigured ? [] : ANALISES_MOCK,
-  );
-  const [notificacoes, setNotificacoes] = useState<Notificacao[]>(
-    isSupabaseConfigured ? [] : NOTIFICACOES_MOCK,
-  );
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [bootstrapLoading, setBootstrapLoading] = useState(false);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [autenticado, setAutenticado] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [usuario, setUsuario] = useState<Usuario>({ nome: "", papel: "" });
+  const [escritorio, setEscritorio] = useState<Escritorio>(ESCRITORIO_VAZIO);
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
+  const [solicitacoes, setSolicitacoes] = useState<Solicitacao[]>([]);
+  const [analises, setAnalises] = useState<Analise[]>([]);
+  const [notificacoes, setNotificacoes] = useState<Notificacao[]>([]);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [orgRole, setOrgRole] = useState<OrgRole | null>(null);
+  const [memberships, setMemberships] = useState<MembershipOrg[]>([]);
+  const [companyRoles, setCompanyRoles] = useState<Record<string, CompanyRole>>({});
   const timers = useRef<Record<string, number>>({});
   const persistEnabled = isSupabaseConfigured && Boolean(organizationId);
+
+  const clearState = useCallback(() => {
+    clearDomainState({
+      setOrganizationId,
+      setOrgRole,
+      setMemberships,
+      setCompanyRoles,
+      setUsuario,
+      setEscritorio,
+      setEmpresas,
+      setSolicitacoes,
+      setAnalises,
+      setNotificacoes,
+      setBootstrapError,
+    });
+  }, []);
+
+  const reloadBootstrap = useCallback(async (uid: string) => {
+    if (!isSupabaseConfigured) {
+      setBootstrapError("Supabase não configurado. Defina VITE_SUPABASE_URL e a publishable key.");
+      return;
+    }
+    setBootstrapLoading(true);
+    setBootstrapError(null);
+    try {
+      const data = await loadBootstrap(uid);
+      setOrganizationId(data.organizationId);
+      setOrgRole(data.orgRole);
+      setMemberships(data.memberships);
+      setCompanyRoles(data.companyRoles);
+      setUsuario({ nome: data.usuarioNome, papel: data.usuarioPapel });
+      setEscritorio(data.escritorio ?? ESCRITORIO_VAZIO);
+      setEmpresas(data.empresas);
+      setSolicitacoes(data.solicitacoes);
+      setAnalises(data.analises);
+      setNotificacoes(data.notificacoes);
+    } catch (err) {
+      console.error("Falha ao carregar dados autorizados", err);
+      setBootstrapError(
+        err instanceof Error ? err.message : "Falha ao carregar dados da organização.",
+      );
+      setOrganizationId(null);
+      setOrgRole(null);
+      setMemberships([]);
+      setCompanyRoles({});
+      setEmpresas([]);
+      setSolicitacoes([]);
+      setAnalises([]);
+      setNotificacoes([]);
+    } finally {
+      setBootstrapLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const session = await getCurrentSession();
+        if (cancelled) return;
+        if (session?.user) {
+          setAutenticado(true);
+          setUserId(session.user.id);
+          await reloadBootstrap(session.user.id);
+        } else {
+          setAutenticado(false);
+          setUserId(null);
+          clearState();
+        }
+      } catch (err) {
+        console.error("Falha ao recuperar sessão", err);
+        if (!cancelled) {
+          setAutenticado(false);
+          setUserId(null);
+          clearState();
+        }
+      } finally {
+        if (!cancelled) setSessionLoading(false);
+      }
+    })();
+
+    const unsubscribe = onAuthStateChange(({ session, user }) => {
+      if (cancelled) return;
+      if (session && user) {
+        setAutenticado(true);
+        setUserId(user.id);
+        void reloadBootstrap(user.id);
+      } else {
+        setAutenticado(false);
+        setUserId(null);
+        clearState();
+      }
+      setSessionLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [clearState, reloadBootstrap]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(timers.current).forEach((t) => window.clearTimeout(t));
+    };
+  }, []);
 
   const persistSolicitacao = useCallback(
     (sol: Solicitacao) => {
@@ -129,15 +289,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const patchSolicitacao = useCallback(
     (id: string, updater: (s: Solicitacao) => Solicitacao) => {
-      setSolicitacoes((lista) => {
-        const next = lista.map((s) => {
+      setSolicitacoes((lista) =>
+        lista.map((s) => {
           if (s.id !== id) return s;
           const updated = updater(s);
           persistSolicitacao(updated);
           return updated;
-        });
-        return next;
-      });
+        }),
+      );
     },
     [persistSolicitacao],
   );
@@ -168,43 +327,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [persistSolicitacao],
   );
 
-  useEffect(() => {
-    return () => {
-      Object.values(timers.current).forEach((t) => window.clearTimeout(t));
-    };
-  }, []);
+  const login = useCallback(async (email: string, senha: string) => {
+    if (!isSupabaseConfigured) {
+      return {
+        ok: false as const,
+        erro: "Supabase Auth não configurado neste ambiente.",
+      };
+    }
 
-  useEffect(() => {
-    if (!isSupabaseConfigured) return;
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const data = await loadBootstrap();
-        if (cancelled || !data) return;
-        setOrganizationId(data.organizationId);
-        setEscritorio(data.escritorio);
-        setEmpresas(data.empresas);
-        setSolicitacoes(data.solicitacoes);
-        setAnalises(data.analises);
-        setNotificacoes(data.notificacoes);
-      } catch (err) {
-        console.error("Falha ao carregar Supabase — usando mocks locais", err);
-        if (!cancelled) {
-          setEmpresas(EMPRESAS_MOCK);
-          setSolicitacoes(SOLICITACOES_MOCK);
-          setAnalises(ANALISES_MOCK);
-          setNotificacoes(NOTIFICACOES_MOCK);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const login = useCallback((email: string, senha: string) => {
     const bloqueio = statusBloqueioLogin();
     if (bloqueio.bloqueado) {
       return {
@@ -228,24 +358,89 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    // MVP demo: formato válido autentica (sem API). Token opaco em sessionStorage.
-    registrarSucessoLogin();
-    setAutenticado(true);
-    setUsuario((u) => ({ ...u, nome: parsed.data.email.split("@")[0] || u.nome }));
-    return { ok: true as const };
+    try {
+      await signInWithPassword(parsed.data.email, parsed.data.senha);
+      limparBloqueioLogin();
+      return { ok: true as const };
+    } catch (err) {
+      const falha = registrarFalhaLogin();
+      if (falha.bloqueado) {
+        return {
+          ok: false as const,
+          erro: `Muitas tentativas. Aguarde ${falha.restanteSegundos}s.`,
+        };
+      }
+      return {
+        ok: false as const,
+        erro: err instanceof Error ? err.message : "Falha na autenticação.",
+      };
+    }
   }, []);
 
-  const logout = useCallback(() => {
-    limparSessao();
+  const logout = useCallback(async () => {
+    Object.values(timers.current).forEach((t) => window.clearTimeout(t));
+    timers.current = {};
+    limparPreferenciasSessao();
+    clearState();
     setAutenticado(false);
-  }, []);
+    setUserId(null);
+    try {
+      await signOut();
+    } catch (err) {
+      console.error("Falha no logout", err);
+    }
+  }, [clearState]);
+
+  const selecionarOrganizacao = useCallback(
+    async (nextOrgId: string) => {
+      if (!memberships.some((m) => m.organizationId === nextOrgId)) {
+        setBootstrapError("Organização não autorizada.");
+        return;
+      }
+      gravarOrganizacaoAtiva(nextOrgId);
+      if (userId) await reloadBootstrap(userId);
+    },
+    [memberships, reloadBootstrap, userId],
+  );
+
+  const criarOrganizacao = useCallback(
+    async (dados: { razaoSocial: string; cnpj?: string; email?: string }) => {
+      try {
+        await createOrganizationOnboarding(dados);
+        if (userId) await reloadBootstrap(userId);
+        return { ok: true as const };
+      } catch (err) {
+        return {
+          ok: false as const,
+          erro: err instanceof Error ? err.message : "Falha ao criar organização.",
+        };
+      }
+    },
+    [reloadBootstrap, userId],
+  );
+
+  const can = useCallback(
+    (permission: Permission, companyId?: string) => {
+      if (companyId) {
+        return hasCompanyPermission(orgRole, companyRoles[companyId] ?? null, permission);
+      }
+      return hasOrgPermission(orgRole, permission);
+    },
+    [orgRole, companyRoles],
+  );
 
   const atualizarPerfil = useCallback((dados: Partial<Usuario>) => {
-    setUsuario((u) => ({ ...u, ...dados }));
+    setUsuario((u) => ({
+      ...u,
+      nome: dados.nome ?? u.nome,
+      // papel vem do backend/membership — não aceitar elevação pelo cliente
+      fotoUrl: dados.fotoUrl ?? u.fotoUrl,
+    }));
   }, []);
 
   const atualizarEscritorio = useCallback(
     (dados: Partial<Escritorio>) => {
+      if (!can("org.manage")) return;
       setEscritorio((e) => {
         const next = { ...e, ...dados };
         if (organizationId) {
@@ -256,34 +451,62 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return next;
       });
     },
-    [organizationId],
+    [organizationId, can],
   );
 
   const enviarCertificadoA1 = useCallback(
-    (nomeArquivo: string) => {
-      const nomeSeguro = sanitizeFileName(nomeArquivo);
+    (dados: {
+      nomeArquivo: string;
+      validadeAte?: string;
+      subjectCN?: string;
+      cnpjBase?: string;
+    }) => {
+      if (!can("org.certificates.manage")) return;
+      const nomeSeguro = sanitizeFileName(dados.nomeArquivo);
+      const agora = agoraIso();
       setEscritorio((e) => {
         const next: Escritorio = {
           ...e,
           certificadoA1: {
             nomeArquivo: nomeSeguro,
-            validadeAte: "2027-12-31",
-            enviadoEm: agoraIso(),
+            validadeAte: dados.validadeAte,
+            enviadoEm: agora,
+            subjectCN: dados.subjectCN,
+            cnpjBase: dados.cnpjBase,
           },
         };
         if (organizationId) {
           void updateEscritorio(organizationId, next).catch((err) => {
-            console.error("Falha ao persistir certificado", err);
+            console.error("Falha ao persistir metadados do certificado", err);
           });
         }
         return next;
       });
+
+      const titular = dados.subjectCN ? ` (${dados.subjectCN})` : "";
+      const notificacao: Notificacao = {
+        id: crypto.randomUUID(),
+        titulo: "Certificado A1 válido",
+        mensagem: `O certificado ${nomeSeguro}${titular} foi validado com sucesso.`,
+        criadaEm: agora,
+        lida: false,
+        href: toSafeInternalHref("/meus-dados") ?? undefined,
+      };
+      setNotificacoes((lista) => [notificacao, ...lista]);
+      if (organizationId) {
+        void insertNotification(organizationId, notificacao).catch((err) => {
+          console.error("Falha ao persistir notificação do certificado", err);
+        });
+      }
     },
-    [organizationId],
+    [organizationId, can],
   );
 
   const adicionarEmpresa = useCallback(
     (dados: NovaEmpresaInput) => {
+      if (!can("company.create") || !organizationId) {
+        throw new Error("Sem permissão para cadastrar empresas.");
+      }
       const parsed = novaEmpresaSchema.parse(dados);
       const agora = agoraIso();
       const empresa = criarEmpresaFromInput(parsed, agora, crypto.randomUUID());
@@ -309,20 +532,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setAnalises((lista) => [analise, ...lista]);
       setNotificacoes((lista) => [notificacao, ...lista]);
 
-      if (organizationId) {
-        void (async () => {
-          try {
-            await insertEmpresa(organizationId, empresa);
-            await insertAnalise(analise);
-            await insertNotification(organizationId, notificacao);
-          } catch (err) {
-            console.error("Falha ao persistir empresa", err);
-          }
-        })();
-      }
+      void (async () => {
+        try {
+          await insertEmpresa(organizationId, empresa);
+          await insertAnalise(analise);
+          await insertNotification(organizationId, notificacao);
+        } catch (err) {
+          console.error("Falha ao persistir empresa", err);
+        }
+      })();
       return empresa;
     },
-    [organizationId],
+    [organizationId, can],
   );
 
   const obterEmpresa = useCallback(
@@ -348,6 +569,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (empresaId: string, aPartirDe?: string) => {
       if (!isValidEntityId(empresaId)) {
         return { erro: "Empresa inválida." };
+      }
+      if (!can("operations.write", empresaId)) {
+        return { erro: "Sem permissão para criar solicitação nesta empresa." };
       }
       const existente = solicitacoes.find(
         (s) => s.empresaId === empresaId && s.status !== "cancelado",
@@ -398,11 +622,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       avancarPipeline(sol.id);
       return sol;
     },
-    [solicitacoes, avancarPipeline, organizationId, persistSolicitacao],
+    [solicitacoes, avancarPipeline, organizationId, persistSolicitacao, can],
   );
 
   const atualizarDados = useCallback(
     (solicitacaoId: string) => {
+      const sol = solicitacoes.find((s) => s.id === solicitacaoId);
+      if (!sol || !can("operations.write", sol.empresaId)) return;
       const agora = agoraIso();
       patchSolicitacao(solicitacaoId, (s) => ({
         ...s,
@@ -421,11 +647,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }));
       avancarPipeline(solicitacaoId);
     },
-    [patchSolicitacao, avancarPipeline],
+    [patchSolicitacao, avancarPipeline, solicitacoes, can],
   );
 
   const gerarRelatorioAgora = useCallback(
     (solicitacaoId: string) => {
+      const sol = solicitacoes.find((s) => s.id === solicitacaoId);
+      if (!sol || !can("operations.write", sol.empresaId)) return;
       const agora = agoraIso();
       patchSolicitacao(solicitacaoId, (s) => ({
         ...s,
@@ -434,11 +662,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ultimaAtualizacaoDadosEm: agora,
       }));
     },
-    [patchSolicitacao],
+    [patchSolicitacao, solicitacoes, can],
   );
 
   const cancelarSolicitacao = useCallback(
     (solicitacaoId: string) => {
+      const sol = solicitacoes.find((s) => s.id === solicitacaoId);
+      if (!sol || !can("operations.write", sol.empresaId)) return;
       if (timers.current[solicitacaoId]) {
         window.clearTimeout(timers.current[solicitacaoId]);
         delete timers.current[solicitacaoId];
@@ -449,11 +679,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         atualizadoEm: agoraIso(),
       }));
     },
-    [patchSolicitacao],
+    [patchSolicitacao, solicitacoes, can],
   );
 
   const reiniciarSolicitacao = useCallback(
     (solicitacaoId: string) => {
+      const sol = solicitacoes.find((s) => s.id === solicitacaoId);
+      if (!sol || !can("operations.write", sol.empresaId)) return;
       patchSolicitacao(solicitacaoId, (s) => ({
         ...s,
         status: "reiniciado",
@@ -466,7 +698,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         avancarPipeline(solicitacaoId);
       }, 800);
     },
-    [patchSolicitacao, avancarPipeline],
+    [patchSolicitacao, avancarPipeline, solicitacoes, can],
   );
 
   const obterAnalisesDaEmpresa = useCallback(
@@ -510,9 +742,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppContextValue>(
     () => ({
       autenticado,
+      sessionLoading,
+      bootstrapLoading,
+      bootstrapError,
+      semOrganizacao: autenticado && !bootstrapLoading && !organizationId,
+      memberships,
+      orgRole,
+      organizationId,
+      companyRoles,
+      can,
       usuario,
       login,
       logout,
+      selecionarOrganizacao,
+      criarOrganizacao,
       atualizarPerfil,
       escritorio,
       atualizarEscritorio,
@@ -538,9 +781,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     [
       autenticado,
+      sessionLoading,
+      bootstrapLoading,
+      bootstrapError,
+      organizationId,
+      memberships,
+      orgRole,
+      companyRoles,
+      can,
       usuario,
       login,
       logout,
+      selecionarOrganizacao,
+      criarOrganizacao,
       atualizarPerfil,
       escritorio,
       atualizarEscritorio,

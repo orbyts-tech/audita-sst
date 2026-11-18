@@ -3,11 +3,13 @@ import type { Empresa } from "@/features/empresas/types";
 import type { Escritorio } from "@/features/meus-dados/types";
 import type { Notificacao } from "@/features/notificacoes/types";
 import type { Solicitacao } from "@/features/solicitacoes/types";
+import type { CompanyRole, OrgRole } from "@/lib/auth/permissions";
+import { labelOrgRole } from "@/lib/auth/permissions";
 import {
-  DEFAULT_ORGANIZATION_ID,
-  getSupabase,
-  isSupabaseConfigured,
-} from "./client";
+  gravarOrganizacaoAtiva,
+  lerOrganizacaoAtiva,
+} from "@/lib/auth/session";
+import { getSupabase, isSupabaseConfigured } from "./client";
 import {
   mapAnaliseRow,
   mapCompanyToEmpresa,
@@ -27,54 +29,100 @@ import type {
   SolicitacaoRow,
 } from "./types";
 
-export type BootstrapData = {
+export type MembershipOrg = {
   organizationId: string;
-  escritorio: Escritorio;
+  role: OrgRole;
+  razaoSocial: string;
+};
+
+export type BootstrapData = {
+  organizationId: string | null;
+  orgRole: OrgRole | null;
+  memberships: MembershipOrg[];
+  usuarioNome: string;
+  usuarioPapel: string;
+  escritorio: Escritorio | null;
   empresas: Empresa[];
+  companyRoles: Record<string, CompanyRole>;
   solicitacoes: Solicitacao[];
   analises: Analise[];
   notificacoes: Notificacao[];
 };
 
-export async function ensureDefaultOrganization(): Promise<string> {
-  const supabase = getSupabase();
-  if (!supabase) throw new Error("Supabase não configurado");
-
-  const { data: existing, error: selectError } = await supabase
-    .from("organizations")
-    .select("id")
-    .eq("id", DEFAULT_ORGANIZATION_ID)
-    .maybeSingle();
-
-  if (selectError) throw selectError;
-  if (existing?.id) return existing.id;
-
-  const { data, error } = await supabase
-    .from("organizations")
-    .insert({
-      id: DEFAULT_ORGANIZATION_ID,
-      razao_social: "GSO Saúde Ocupacional Ltda.",
-      cnpj: "11222333000181",
-      email: "comercial@gso.example",
-    })
-    .select("id")
-    .single();
-
-  if (error) throw error;
-  return data.id as string;
+function emptyBootstrap(partial?: Partial<BootstrapData>): BootstrapData {
+  return {
+    organizationId: null,
+    orgRole: null,
+    memberships: [],
+    usuarioNome: "",
+    usuarioPapel: "Sem organização",
+    escritorio: null,
+    empresas: [],
+    companyRoles: {},
+    solicitacoes: [],
+    analises: [],
+    notificacoes: [],
+    ...partial,
+  };
 }
 
-export async function loadBootstrap(): Promise<BootstrapData | null> {
-  if (!isSupabaseConfigured) return null;
+export async function loadBootstrap(userId: string): Promise<BootstrapData> {
+  if (!isSupabaseConfigured) {
+    throw new Error("Supabase não configurado.");
+  }
   const supabase = getSupabase();
-  if (!supabase) return null;
+  if (!supabase) throw new Error("Supabase não configurado.");
 
-  const organizationId = await ensureDefaultOrganization();
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("full_name, email, papel")
+    .eq("id", userId)
+    .maybeSingle();
+  if (profileError) throw profileError;
+
+  const { data: memberRows, error: memberError } = await supabase
+    .from("organization_members")
+    .select("organization_id, role, organizations(id, razao_social)")
+    .eq("user_id", userId);
+  if (memberError) throw memberError;
+
+  const memberships: MembershipOrg[] = (memberRows ?? []).map((row) => {
+    const org = row.organizations as
+      | { id: string; razao_social: string }
+      | { id: string; razao_social: string }[]
+      | null;
+    const orgRow = Array.isArray(org) ? org[0] : org;
+    return {
+      organizationId: row.organization_id as string,
+      role: row.role as OrgRole,
+      razaoSocial: orgRow?.razao_social ?? "Organização",
+    };
+  });
+
+  if (memberships.length === 0) {
+    return emptyBootstrap({
+      usuarioNome:
+        profile?.full_name ||
+        profile?.email?.split("@")[0] ||
+        "Usuário",
+      usuarioPapel: "Sem organização",
+    });
+  }
+
+  const preferred = lerOrganizacaoAtiva();
+  const active =
+    memberships.find((m) => m.organizationId === preferred) ?? memberships[0];
+  gravarOrganizacaoAtiva(active.organizationId);
+
+  const organizationId = active.organizationId;
+  const orgRole = active.role;
+  const isOrgAdmin = orgRole === "owner" || orgRole === "admin";
 
   const [
     orgRes,
     certRes,
     companiesRes,
+    accessRes,
     solicitacoesRes,
     periodosRes,
     analisesRes,
@@ -88,11 +136,22 @@ export async function loadBootstrap(): Promise<BootstrapData | null> {
       .order("enviado_em", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    isOrgAdmin
+      ? supabase
+          .from("companies")
+          .select("*")
+          .eq("organization_id", organizationId)
+          .order("atualizado_em", { ascending: false })
+      : supabase
+          .from("companies")
+          .select("*, company_access!inner(role)")
+          .eq("organization_id", organizationId)
+          .eq("company_access.user_id", userId)
+          .order("atualizado_em", { ascending: false }),
     supabase
-      .from("companies")
-      .select("*")
-      .eq("organization_id", organizationId)
-      .order("atualizado_em", { ascending: false }),
+      .from("company_access")
+      .select("company_id, role")
+      .eq("user_id", userId),
     supabase.from("solicitacoes").select("*").order("atualizado_em", { ascending: false }),
     supabase.from("solicitacao_periodos").select("*"),
     supabase.from("analises").select("*").order("atualizado_em", { ascending: false }),
@@ -105,12 +164,21 @@ export async function loadBootstrap(): Promise<BootstrapData | null> {
 
   if (orgRes.error) throw orgRes.error;
   if (companiesRes.error) throw companiesRes.error;
+  if (accessRes.error) throw accessRes.error;
   if (solicitacoesRes.error) throw solicitacoesRes.error;
   if (periodosRes.error) throw periodosRes.error;
   if (analisesRes.error) throw analisesRes.error;
   if (notificationsRes.error) throw notificationsRes.error;
 
-  const companyIds = new Set((companiesRes.data as CompanyRow[]).map((c) => c.id));
+  const empresas = ((companiesRes.data ?? []) as CompanyRow[]).map(mapCompanyToEmpresa);
+  const companyIds = new Set(empresas.map((e) => e.id));
+  const companyRoles: Record<string, CompanyRole> = {};
+  for (const row of accessRes.data ?? []) {
+    if (companyIds.has(row.company_id as string)) {
+      companyRoles[row.company_id as string] = row.role as CompanyRole;
+    }
+  }
+
   const periodosBySol = new Map<string, ReturnType<typeof mapPeriodoRow>[]>();
   for (const row of (periodosRes.data ?? []) as SolicitacaoPeriodoRow[]) {
     const list = periodosBySol.get(row.solicitacao_id) ?? [];
@@ -124,11 +192,19 @@ export async function loadBootstrap(): Promise<BootstrapData | null> {
 
   return {
     organizationId,
+    orgRole,
+    memberships,
+    usuarioNome:
+      profile?.full_name ||
+      profile?.email?.split("@")[0] ||
+      "Usuário",
+    usuarioPapel: labelOrgRole(orgRole),
     escritorio: mapOrganizationToEscritorio(
       orgRes.data as OrganizationRow,
       (certRes.data as OrganizationCertificateRow | null) ?? null,
     ),
-    empresas: ((companiesRes.data ?? []) as CompanyRow[]).map(mapCompanyToEmpresa),
+    empresas,
+    companyRoles,
     solicitacoes,
     analises: ((analisesRes.data ?? []) as AnaliseRow[])
       .filter((a) => companyIds.has(a.company_id))
@@ -137,6 +213,27 @@ export async function loadBootstrap(): Promise<BootstrapData | null> {
       mapNotificationRow,
     ),
   };
+}
+
+export async function createOrganizationOnboarding(input: {
+  razaoSocial: string;
+  cnpj?: string;
+  email?: string;
+}): Promise<string> {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase não configurado.");
+  const { data, error } = await supabase
+    .from("organizations")
+    .insert({
+      razao_social: input.razaoSocial,
+      cnpj: input.cnpj || null,
+      email: input.email || null,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  gravarOrganizacaoAtiva(data.id as string);
+  return data.id as string;
 }
 
 export async function insertEmpresa(

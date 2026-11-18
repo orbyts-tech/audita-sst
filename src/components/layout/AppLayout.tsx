@@ -59,8 +59,10 @@ export function AppLayout({
           notificacoesNaoLidas={naoLidas}
           onAbrirMenu={() => setMenuAberto(true)}
           onSair={() => {
-            logout();
-            navigate("/login", { replace: true });
+            void (async () => {
+              await logout();
+              navigate("/login", { replace: true });
+            })();
           }}
         />
         <main

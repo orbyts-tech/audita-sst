@@ -8,16 +8,25 @@ import { statusBloqueioLogin } from "@/lib/auth/session";
 import { errosZod, loginSchema } from "@/lib/validation/schemas";
 
 export function LoginPage() {
-  const { autenticado, login } = useApp();
+  const { autenticado, sessionLoading, login } = useApp();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [fieldErros, setFieldErros] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+
+  if (sessionLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface-50 p-6">
+        <p className="text-sm text-ink-muted">Verificando sessão…</p>
+      </div>
+    );
+  }
 
   if (autenticado) return <Navigate to="/solicitacoes" replace />;
 
-  function onSubmit(e: FormEvent) {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setErro(null);
     setFieldErros({});
@@ -34,12 +43,17 @@ export function LoginPage() {
       return;
     }
 
-    const r = login(parsed.data.email, parsed.data.senha);
-    if (!r.ok) {
-      setErro(r.erro);
-      return;
+    setSubmitting(true);
+    try {
+      const r = await login(parsed.data.email, parsed.data.senha);
+      if (!r.ok) {
+        setErro(r.erro);
+        return;
+      }
+      navigate("/solicitacoes", { replace: true });
+    } finally {
+      setSubmitting(false);
     }
-    navigate("/solicitacoes", { replace: true });
   }
 
   return (
@@ -84,12 +98,12 @@ export function LoginPage() {
               maxLength={128}
             />
           </Field>
-          <Button type="submit" size="lg" className="w-full">
-            Entrar
+          <Button type="submit" size="lg" className="w-full" disabled={submitting}>
+            {submitting ? "Entrando…" : "Entrar"}
           </Button>
         </form>
         <p className="mt-6 text-center text-sm text-ink-muted">
-          Demo: e-mail válido e senha com 4+ caracteres. Após 5 falhas, bloqueio de 60s.
+          Acesso por convite. Após 5 falhas, bloqueio de 60s.
         </p>
       </div>
     </div>

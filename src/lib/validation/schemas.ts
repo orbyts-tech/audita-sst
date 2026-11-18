@@ -13,7 +13,7 @@ export const loginSchema = z.object({
     .max(254, "E-mail muito longo."),
   senha: z
     .string()
-    .min(4, "Senha inválida.")
+    .min(6, "Senha deve ter pelo menos 6 caracteres.")
     .max(128, "Senha muito longa."),
 });
 

@@ -189,24 +189,37 @@ let storeReady: Promise<DataStore> | null = null;
 
 export function getStore(): DataStore {
   if (!store) {
+    if (getEnv().NODE_ENV === "production") {
+      throw new Error(
+        "Store não inicializado. Chame getStoreAsync() no boot — MemoryStore é proibido em produção.",
+      );
+    }
     store = new MemoryStore();
   }
   return store;
 }
 
-/** Inicializa Postgres quando DATABASE_URL existir; senão mantém memória. */
+/** Inicializa Postgres quando DATABASE_URL existir; senão memória só em dev/test. */
 export async function getStoreAsync(): Promise<DataStore> {
   if (storeReady) return storeReady;
 
   storeReady = (async () => {
-    if (getEnv().DATABASE_URL) {
+    const env = getEnv();
+    if (env.DATABASE_URL) {
       const { createPostgresStore } = await import("./postgresStore.js");
       const pgStore = await createPostgresStore();
       if (pgStore) {
         store = pgStore;
         return store;
       }
-      logger.warn("DATABASE_URL definida, mas conexão falhou — store em memória ativo.");
+      if (env.NODE_ENV === "production") {
+        throw new Error(
+          "DATABASE_URL definida, mas a conexão falhou. MemoryStore é proibido em produção.",
+        );
+      }
+      logger.warn("DATABASE_URL definida, mas conexão falhou — store em memória ativo (não-produção).");
+    } else if (env.NODE_ENV === "production") {
+      throw new Error("DATABASE_URL é obrigatória em produção.");
     }
     store = new MemoryStore();
     return store;
